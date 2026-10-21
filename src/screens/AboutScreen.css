@@ -1,0 +1,33 @@
+.about {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.about__intro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.about__instructions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-inline-start: var(--space-4);
+}
+
+.about__history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.about__empty {
+  padding: var(--space-3);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-card);
+  color: var(--color-soft-gray);
+  opacity: 0.8;
+  text-align: center;
+}
