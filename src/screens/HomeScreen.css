@@ -10,7 +10,21 @@
   text-align: center;
 }
 
+/* Fixed height so the layout does not jump between states */
 .home__status {
-  min-height: 48px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  min-height: 60px;
   text-align: center;
+}
+
+.home__hint {
+  color: var(--color-soft-gray);
+  opacity: 0.8;
+}
+
+.home__error {
+  color: var(--color-red);
 }

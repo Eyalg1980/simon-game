@@ -1,10 +1,27 @@
+import type { ReactNode } from 'react';
 import './BottomNav.css';
 
 export type Screen = 'home' | 'about';
 
-const ITEMS: { screen: Screen; label: string }[] = [
-  { screen: 'home', label: 'בית' },
-  { screen: 'about', label: 'אודות' },
+const HOME_ICON = (
+  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path d="M3 10.5 12 3l9 7.5" />
+    <path d="M5.5 9v11h13V9" />
+    <path d="M10 20v-6h4v6" />
+  </svg>
+);
+
+const INFO_ICON = (
+  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 11v6" />
+    <path d="M12 7.5v.01" />
+  </svg>
+);
+
+const ITEMS: { screen: Screen; label: string; icon: ReactNode }[] = [
+  { screen: 'home', label: 'בית', icon: HOME_ICON },
+  { screen: 'about', label: 'אודות', icon: INFO_ICON },
 ];
 
 type Props = {
@@ -25,7 +42,8 @@ export default function BottomNav({ current, onNavigate }: Props) {
             aria-current={active ? 'page' : undefined}
             onClick={() => onNavigate(item.screen)}
           >
-            {item.label}
+            {item.icon}
+            <span>{item.label}</span>
           </button>
         );
       })}

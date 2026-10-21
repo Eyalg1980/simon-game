@@ -28,13 +28,36 @@
 .simon-board__pad {
   padding: 0;
   border: none;
+  background-color: var(--pad-color);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
   touch-action: manipulation;
+  transition:
+    filter 80ms ease,
+    box-shadow 80ms ease;
+}
+
+.simon-board__pad:disabled {
+  cursor: default;
 }
 
 .simon-board__pad:focus-visible {
   outline-offset: -6px;
+}
+
+/* While the sequence is presented, all pads dim and only the active one glows */
+.simon-board--dimmed .simon-board__pad {
+  filter: brightness(0.45) saturate(0.7);
+}
+
+.simon-board .simon-board__pad--lit {
+  position: relative;
+  z-index: 1;
+  filter: brightness(1.25) saturate(1.1);
+  box-shadow:
+    0 0 28px 6px var(--pad-color),
+    inset 0 0 24px rgb(255 255 255 / 0.45);
 }
 
 /* Each pad sits in its grid area; only its outer corner is rounded */
@@ -59,25 +82,27 @@
 }
 
 .simon-board__pad--green {
-  background-color: var(--color-green);
+  --pad-color: var(--color-green);
 }
 
 .simon-board__pad--red {
-  background-color: var(--color-red);
+  --pad-color: var(--color-red);
 }
 
 .simon-board__pad--yellow {
-  background-color: var(--color-yellow);
+  --pad-color: var(--color-yellow);
 }
 
 .simon-board__pad--blue {
-  background-color: var(--color-blue);
+  --pad-color: var(--color-blue);
 }
 
 .simon-board__center {
   position: absolute;
   top: 50%;
   left: 50%;
+  /* Stays above a glowing pad */
+  z-index: 2;
   width: 32%;
   aspect-ratio: 1;
   border: 4px solid var(--color-border);

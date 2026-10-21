@@ -1,0 +1,51 @@
+/* Full-screen backdrop that blurs the screen behind the result */
+.game-result {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-3);
+  background-color: rgb(10 22 40 / 0.45);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+.game-result__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 340px;
+  padding: var(--space-4) var(--space-3);
+  border: 1px solid rgb(0 163 255 / 0.6);
+  border-radius: 20px;
+  background-color: rgb(18 33 58 / 0.96);
+  box-shadow: 0 16px 40px rgb(0 0 0 / 0.55);
+  text-align: center;
+}
+
+.game-result__title {
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.game-result__title span {
+  display: block;
+}
+
+.game-result__accent {
+  color: var(--color-green);
+}
+
+.game-result__title--loss {
+  color: var(--color-red);
+}
+
+.game-result__detail {
+  color: var(--color-soft-gray);
+  font-size: 20px;
+  font-weight: 600;
+}

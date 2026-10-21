@@ -11,8 +11,13 @@
 
 .bottom-nav__item {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
   min-height: 56px;
-  padding: var(--space-2);
+  padding: var(--space-1);
   border: none;
   background: none;
   color: var(--color-soft-gray);
@@ -22,6 +27,16 @@
   cursor: pointer;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+}
+
+.bottom-nav__item svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* Divider between the two options */
