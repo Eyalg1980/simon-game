@@ -323,32 +323,6 @@ describe('full game', () => {
     expect(screen.getByText('המשחק מציג את הרצף')).toBeInTheDocument();
   });
 
-  it.each(['presenting', 'awaitingInput'] as const)(
-    'leaving to "אודות" while %s cancels the game without leftover light, sound or timers',
-    async (phase) => {
-      renderApp();
-      await clickStart();
-      if (phase === 'presenting') {
-        advance(1200); // first color is lit and sounding
-      } else {
-        playRound(1);
-        const sequence = watchRound(2);
-        tap(sequence[0]); // its release timer is still pending
-      }
-
-      fireEvent.click(within(nav()).getByRole('button', { name: 'אודות' }));
-
-      expect(audio.stopAll).toHaveBeenCalled();
-      expect(tones.every((t) => t.end !== null)).toBe(true);
-      expect(vi.getTimerCount()).toBe(0);
-
-      fireEvent.click(within(nav()).getByRole('button', { name: 'בית' }));
-      expect(screen.getByRole('button', { name: 'התחל משחק' })).toBeInTheDocument();
-      expect(screen.getByText('שלב 1 מתוך 10')).toBeInTheDocument();
-      expect(document.querySelector('[data-lit]')).toBeNull();
-    },
-  );
-
   it('a page refresh drops the active game and nothing is persisted', async () => {
     const getItem = vi.spyOn(Storage.prototype, 'getItem');
     const setItem = vi.spyOn(Storage.prototype, 'setItem');
@@ -362,5 +336,310 @@ describe('full game', () => {
     expect(screen.getByText('שלב 1 מתוך 10')).toBeInTheDocument();
     expect(getItem).not.toHaveBeenCalled();
     expect(setItem).not.toHaveBeenCalled();
+  });
+});
+
+describe('pause and resume', () => {
+  let visibility: DocumentVisibilityState;
+
+  beforeEach(() => {
+    visibility = 'visible';
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
+  });
+
+  function goAbout() {
+    fireEvent.click(within(nav()).getByRole('button', { name: 'אודות' }));
+  }
+
+  function goHome() {
+    fireEvent.click(within(nav()).getByRole('button', { name: 'בית' }));
+  }
+
+  function setVisibility(next: DocumentVisibilityState) {
+    visibility = next;
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+  }
+
+  async function clickResume() {
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'המשך משחק' }));
+    });
+  }
+
+  /** An unlockAudio call that resolves only when the test says so. */
+  function deferUnlock() {
+    let resolve!: (ok: boolean) => void;
+    vi.mocked(audio.unlockAudio).mockReturnValueOnce(
+      new Promise<boolean>((r) => {
+        resolve = r;
+      }),
+    );
+    return async (ok: boolean) => {
+      await act(async () => {
+        resolve(ok);
+      });
+    };
+  }
+
+  // A resumed round waits 1000ms (as after "התחל משחק"), then shows every color
+  function watchResumed(round: number): ColorId[] {
+    const before = tones.length;
+    advance(1000 + round * 600 + (round - 1) * 250);
+    expect(screen.getByText('התור שלך')).toBeInTheDocument();
+    return tones.slice(before).map((t) => t.color);
+  }
+
+  function expectSilentAndStill() {
+    expect(audio.stopAll).toHaveBeenCalled();
+    expect(tones.every((t) => t.end !== null)).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  }
+
+  function expectPaused(round: number) {
+    expect(screen.getByText('המשחק מושהה')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'המשך משחק' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'התחל משחק' })).not.toBeInTheDocument();
+    expect(screen.getByText(`שלב ${round} מתוך 10`)).toBeInTheDocument();
+    expect(pad('green')).toBeDisabled();
+    expect(document.querySelector('[data-lit]')).toBeNull();
+  }
+
+  it.each(['presenting', 'awaitingInput'] as const)(
+    'leaving to "אודות" while %s pauses at once, and returning does not resume by itself',
+    async (phase) => {
+      renderApp();
+      await clickStart();
+      let round = 1;
+      if (phase === 'presenting') {
+        advance(1200); // first color is lit and sounding
+      } else {
+        playRound(1);
+        const sequence = watchRound(2);
+        tap(sequence[0]); // its release timer is still pending
+        round = 2;
+      }
+
+      goAbout();
+      expectSilentAndStill();
+
+      goHome();
+      expectPaused(round);
+      const toneCount = tones.length;
+      advance(10000);
+      expect(tones).toHaveLength(toneCount);
+      expect(document.querySelector('[data-lit]')).toBeNull();
+      // A paused game is not a loss
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(audio.playLoss).not.toHaveBeenCalled();
+    },
+  );
+
+  it('"המשך משחק" presents the whole sequence again, even if part of it was entered', async () => {
+    renderApp();
+    await clickStart();
+    playRound(1);
+    playRound(2);
+    const sequence = watchRound(3);
+    tap(sequence[0]);
+    tap(sequence[1]);
+
+    goAbout();
+    goHome();
+    expectPaused(3);
+    const callsBefore = randomCalls;
+    await clickResume();
+
+    expect(screen.getByText('המשחק מציג את הרצף')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'המשך משחק' })).not.toBeInTheDocument();
+    expect(pad('green')).toBeDisabled();
+    expect(watchResumed(3)).toEqual(sequence);
+    expect(screen.getByText('שלב 3 מתוך 10')).toBeInTheDocument();
+    expect(randomCalls).toBe(callsBefore);
+
+    // Input starts over from the first color, and the game goes on normally
+    sequence.forEach(tap);
+    const next = watchRound(4);
+    expect(next).toHaveLength(4);
+    expect(next.slice(0, 3)).toEqual(sequence);
+  });
+
+  it('hiding the app pauses the same way, and becoming visible again does not resume', async () => {
+    renderApp();
+    await clickStart();
+    advance(1200);
+
+    setVisibility('hidden');
+    expectSilentAndStill();
+    setVisibility('visible');
+
+    expectPaused(1);
+    const toneCount = tones.length;
+    advance(10000);
+    expect(tones).toHaveLength(toneCount);
+
+    await clickResume();
+    expect(watchResumed(1)).toHaveLength(1);
+  });
+
+  it('pagehide pauses an active game', async () => {
+    renderApp();
+    await clickStart();
+    playRound(1);
+    const sequence = watchRound(2);
+    tap(sequence[0]);
+
+    act(() => {
+      window.dispatchEvent(new Event('pagehide'));
+    });
+    expectSilentAndStill();
+    act(() => {
+      window.dispatchEvent(new Event('pageshow'));
+    });
+    expectPaused(2);
+  });
+
+  it('pausing between rounds resumes the next round, with its added color', async () => {
+    renderApp();
+    await clickStart();
+    const [first] = playRound(1);
+    // Still showing "שלב 1" during the transition
+    expect(screen.getByText('שלב 1 מתוך 10')).toBeInTheDocument();
+
+    goAbout();
+    goHome();
+    expectPaused(2);
+    await clickResume();
+    const sequence = watchResumed(2);
+    expect(sequence).toHaveLength(2);
+    expect(sequence[0]).toBe(first);
+  });
+
+  it('leaving after a wrong press shows the loss message on return, not "המשך משחק"', async () => {
+    renderApp();
+    await clickStart();
+    const [shown] = watchRound(1);
+    tap(wrongOf(shown));
+
+    goAbout();
+    advance(5000);
+    expect(audio.playLoss).not.toHaveBeenCalled();
+
+    goHome();
+    expect(within(screen.getByRole('dialog')).getByRole('heading', { name: 'נפסלת!' })).toBeInTheDocument();
+    expect(screen.getByText('שלבים שהושלמו: 0')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'המשך משחק' })).not.toBeInTheDocument();
+    expect(audio.playLoss).toHaveBeenCalledTimes(1);
+
+    goAbout();
+    goHome();
+    advance(5000);
+    expect(audio.playLoss).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('hiding the app after the last correct press of round 10 shows the win on return', async () => {
+    renderApp();
+    await clickStart();
+    for (let round = 1; round <= 10; round++) playRound(round);
+
+    setVisibility('hidden');
+    advance(5000);
+    expect(audio.playWin).not.toHaveBeenCalled();
+    expect(confetti).not.toHaveBeenCalled();
+
+    setVisibility('visible');
+    expect(screen.getByRole('heading', { name: 'כל הכבוד! ניצחת!' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'המשך משחק' })).not.toBeInTheDocument();
+    expect(audio.playWin).toHaveBeenCalledTimes(1);
+    expect(confetti).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows an error and stays paused when audio cannot start on "המשך משחק"', async () => {
+    renderApp();
+    await clickStart();
+    playRound(1);
+    goAbout();
+    goHome();
+
+    vi.mocked(audio.unlockAudio).mockResolvedValueOnce(false);
+    await clickResume();
+    expect(
+      screen.getByText('לא הצלחנו להפעיל את הצליל. ודא שהטלפון אינו במצב שקט ולחץ שוב.'),
+    ).toBeInTheDocument();
+    expectPaused(2);
+    const toneCount = tones.length;
+    advance(5000);
+    expect(tones).toHaveLength(toneCount);
+
+    await clickResume();
+    expect(screen.queryByText(/לא הצלחנו להפעיל את הצליל/)).not.toBeInTheDocument();
+    expect(watchResumed(2)).toHaveLength(2);
+  });
+
+  it('a double tap on "המשך משחק" presents the sequence only once', async () => {
+    renderApp();
+    await clickStart();
+    advance(1200);
+    goAbout();
+    goHome();
+
+    const resolveUnlock = deferUnlock();
+    const resume = screen.getByRole('button', { name: 'המשך משחק' });
+    fireEvent.click(resume);
+    fireEvent.click(resume);
+    await resolveUnlock(true);
+
+    const before = tones.length;
+    advance(5000);
+    expect(tones.slice(before)).toHaveLength(1);
+    expect(screen.getByText('התור שלך')).toBeInTheDocument();
+  });
+
+  it('leaving while "המשך משחק" unlocks audio keeps the game paused', async () => {
+    renderApp();
+    await clickStart();
+    advance(1200);
+    goAbout();
+    goHome();
+
+    const resolveUnlock = deferUnlock();
+    fireEvent.click(screen.getByRole('button', { name: 'המשך משחק' }));
+    goAbout();
+    await resolveUnlock(true);
+    const toneCount = tones.length;
+    advance(5000);
+    expect(tones).toHaveLength(toneCount);
+
+    goHome();
+    expectPaused(1);
+  });
+
+  it('leaving while "התחל משחק" unlocks audio does not start a game', async () => {
+    renderApp();
+    const resolveUnlock = deferUnlock();
+    fireEvent.click(screen.getByRole('button', { name: 'התחל משחק' }));
+    goAbout();
+    await resolveUnlock(true);
+    advance(5000);
+    expect(tones).toHaveLength(0);
+
+    goHome();
+    expect(screen.getByRole('button', { name: 'התחל משחק' })).toBeInTheDocument();
+  });
+
+  it('a page refresh drops a paused game', async () => {
+    const first = renderApp();
+    await clickStart();
+    playRound(1);
+    goAbout();
+    goHome();
+    expectPaused(2);
+    first.unmount();
+
+    renderApp();
+    expect(screen.getByRole('button', { name: 'התחל משחק' })).toBeInTheDocument();
+    expect(screen.getByText('שלב 1 מתוך 10')).toBeInTheDocument();
   });
 });

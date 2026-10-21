@@ -16,6 +16,7 @@ export default function HomeScreen({ game }: Props) {
   if (state.status === 'idle') boardMode = 'idle';
   else if (state.status === 'presenting') boardMode = 'presenting';
   else if (state.status === 'awaitingInput') boardMode = 'input';
+  else if (state.status === 'paused') boardMode = 'paused';
 
   return (
     <section className="home">
@@ -36,7 +37,8 @@ export default function HomeScreen({ game }: Props) {
 
       {/* Status and instructions area */}
       <div className="home__status" aria-live="polite">
-        {state.status === 'idle' && audioError && (
+        {state.status === 'paused' && <p className="text-h3">המשחק מושהה</p>}
+        {(state.status === 'idle' || state.status === 'paused') && audioError && (
           <p className="home__error text-caption">
             לא הצלחנו להפעיל את הצליל. ודא שהטלפון אינו במצב שקט ולחץ שוב.
           </p>
@@ -53,6 +55,11 @@ export default function HomeScreen({ game }: Props) {
       {state.status === 'idle' && (
         <button type="button" className="btn-primary" onClick={game.startGame}>
           התחל משחק
+        </button>
+      )}
+      {state.status === 'paused' && (
+        <button type="button" className="btn-primary" onClick={game.resumeGame}>
+          המשך משחק
         </button>
       )}
       {finished && resultVisible && (

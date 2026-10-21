@@ -18,7 +18,8 @@ type ActivePress = { pointerId: number | null; startedAt: number; stopTone: () =
 type PendingRelease = { timer: ReturnType<typeof setTimeout>; finish: () => void };
 
 // Game state lives in App so switching screens does not unmount it (ADR-2).
-export function useGame() {
+// onHome: whether the home screen is the one shown right now.
+export function useGame(onHome: boolean) {
   const [state, dispatch] = useReducer(gameReducer, initialGameState);
   const [presentedColor, setPresentedColor] = useState<ColorId | null>(null);
   const [pressedColor, setPressedColor] = useState<ColorId | null>(null);
@@ -26,10 +27,18 @@ export function useGame() {
   const [roundRevealedFor, setRoundRevealedFor] = useState(-1);
   const [resultRevealedFor, setResultRevealedFor] = useState(-1);
   const [audioError, setAudioError] = useState(false);
+  const [pageHidden, setPageHidden] = useState(() => document.visibilityState === 'hidden');
 
-  const startingRef = useRef(false);
+  const unlockingRef = useRef(false);
+  // Incremented on every pause; an audio unlock that spans a pause is dropped (ADR-13)
+  const interruptRef = useRef(0);
+  // gameId whose result was shown, and gameId whose result wait was cut by a pause (ADR-12)
+  const resultShownRef = useRef(-1);
+  const resultInterruptedRef = useRef(-1);
   const activePress = useRef<ActivePress | null>(null);
   const pendingRelease = useRef<PendingRelease | null>(null);
+
+  const away = !onHome || pageHidden;
 
   // Sequence Controller: one cancellable timeline per presentation (ADR-10)
   useEffect(() => {
@@ -79,12 +88,22 @@ export function useGame() {
     // The sequence only changes together with presentationId
   }, [state.status, state.presentationId]);
 
-  // End of game: the message, end sound and (win only) confetti appear after a short delay.
-  // Confetti is cleared when leaving the won state.
+  // End of game: the message, end sound and (win only) confetti appear after a short delay,
+  // and only while the home screen is shown. If the player left during the delay, they appear
+  // at once on return (ADR-12). Confetti is cleared when leaving the won state or the screen.
   useEffect(() => {
     if (state.status !== 'won' && state.status !== 'lost') return;
     const { status, gameId } = state;
-    const timer = setTimeout(() => {
+    const clear = () => {
+      if (status === 'won') clearConfetti();
+    };
+    if (resultShownRef.current === gameId) return clear;
+    if (away) {
+      resultInterruptedRef.current = gameId;
+      return;
+    }
+    const reveal = () => {
+      resultShownRef.current = gameId;
       setResultRevealedFor(gameId);
       if (status === 'won') {
         playWin();
@@ -92,12 +111,17 @@ export function useGame() {
       } else {
         playLoss();
       }
-    }, TIMING.RESULT_DELAY_MS);
+    };
+    if (resultInterruptedRef.current === gameId) {
+      reveal();
+      return clear;
+    }
+    const timer = setTimeout(reveal, TIMING.RESULT_DELAY_MS);
     return () => {
       clearTimeout(timer);
-      if (status === 'won') clearConfetti();
+      clear();
     };
-  }, [state.status, state.gameId]);
+  }, [state.status, state.gameId, away]);
 
   const finishPendingRelease = useCallback(() => {
     const pending = pendingRelease.current;
@@ -155,6 +179,39 @@ export function useGame() {
     [finishPendingRelease],
   );
 
+  // One pause for every trigger: leaving to "אודות", hiding the app and pagehide (ADR-3).
+  // Light, sound and timers stop at once; the reducer ignores it unless a game is active.
+  const pause = useCallback(() => {
+    interruptRef.current += 1;
+    dispatch({ type: 'pause' });
+    finishPendingRelease();
+    activePress.current?.stopTone();
+    activePress.current = null;
+    setPressedColor(null);
+    stopAll();
+  }, [finishPendingRelease]);
+
+  // Becoming visible again does not resume: the player must press "המשך משחק"
+  useEffect(() => {
+    const onHide = () => {
+      setPageHidden(true);
+      pause();
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') onHide();
+      else setPageHidden(false);
+    };
+    const onPageShow = () => setPageHidden(document.visibilityState === 'hidden');
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pagehide', onHide);
+    window.addEventListener('pageshow', onPageShow);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('pagehide', onHide);
+      window.removeEventListener('pageshow', onPageShow);
+    };
+  }, [pause]);
+
   function onPadPointerDown(color: ColorId, e: ReactPointerEvent) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     beginPress(color, e.pointerId);
@@ -168,36 +225,38 @@ export function useGame() {
     releasePress(null);
   }
 
-  async function startGame() {
-    if (startingRef.current || state.status !== 'idle') return;
-    startingRef.current = true;
+  // Audio must be unlocked inside the gesture; never start a silent game (ARCHITECTURE §2.4).
+  // A second tap while unlocking is ignored, and so is the result if the player left meanwhile.
+  async function withAudio(action: () => void) {
+    if (unlockingRef.current) return;
+    unlockingRef.current = true;
+    const interruptsBefore = interruptRef.current;
     try {
-      // Audio must be unlocked inside the gesture; never start a silent game (ARCHITECTURE §2.4)
       const ok = await unlockAudio();
+      if (interruptRef.current !== interruptsBefore) return;
       if (ok) {
         setAudioError(false);
-        dispatch({ type: 'start', firstColor: randomColor() });
+        action();
       } else {
         setAudioError(true);
       }
     } finally {
-      startingRef.current = false;
+      unlockingRef.current = false;
     }
+  }
+
+  async function startGame() {
+    if (state.status !== 'idle') return;
+    await withAudio(() => dispatch({ type: 'start', firstColor: randomColor() }));
+  }
+
+  async function resumeGame() {
+    if (state.status !== 'paused') return;
+    await withAudio(() => dispatch({ type: 'resume' }));
   }
 
   function dismiss() {
     dispatch({ type: 'dismiss' });
-  }
-
-  // Temporary for Milestone 2: leaving to "אודות" cancels an active game. Replaced by pause in M3.
-  function abandon() {
-    if (state.status !== 'presenting' && state.status !== 'awaitingInput') return;
-    dispatch({ type: 'abandon' });
-    finishPendingRelease();
-    activePress.current?.stopTone();
-    activePress.current = null;
-    setPressedColor(null);
-    stopAll();
   }
 
   const displayRound =
@@ -217,8 +276,9 @@ export function useGame() {
     resultVisible,
     audioError,
     startGame,
+    resumeGame,
+    pause,
     dismiss,
-    abandon,
     onPadPointerDown,
     onPadKeyDown,
   };

@@ -1,7 +1,7 @@
 import type { ColorId } from './colors.ts';
 import { TOTAL_ROUNDS } from './constants.ts';
 
-export type GameStatus = 'idle' | 'presenting' | 'awaitingInput' | 'won' | 'lost';
+export type GameStatus = 'idle' | 'presenting' | 'awaitingInput' | 'paused' | 'won' | 'lost';
 
 export type GameState = {
   status: GameStatus;
@@ -25,8 +25,8 @@ export type GameAction =
   | { type: 'presentationDone'; presentationId: number }
   | { type: 'press'; color: ColorId; nextColor: ColorId }
   | { type: 'dismiss' }
-  // Temporary for Milestone 2: leaving to "אודות" cancels the game. Replaced by pause in M3.
-  | { type: 'abandon' };
+  | { type: 'pause' }
+  | { type: 'resume' };
 
 export const initialGameState: GameState = {
   status: 'idle',
@@ -91,12 +91,26 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         presentationId: state.presentationId,
       };
 
-    case 'abandon':
+    // Leaving to "אודות" or hiding the app (ADR-3). The sequence and round are kept;
+    // partial input is dropped and the running presentation becomes stale.
+    case 'pause':
       if (state.status !== 'presenting' && state.status !== 'awaitingInput') return state;
       return {
-        ...initialGameState,
-        gameId: state.gameId,
+        ...state,
+        status: 'paused',
+        inputIndex: 0,
         presentationId: state.presentationId + 1,
+      };
+
+    // "המשך משחק": the full sequence of the same round is presented again from the start
+    case 'resume':
+      if (state.status !== 'paused') return state;
+      return {
+        ...state,
+        status: 'presenting',
+        inputIndex: 0,
+        presentationId: state.presentationId + 1,
+        intro: 'start',
       };
 
     default:

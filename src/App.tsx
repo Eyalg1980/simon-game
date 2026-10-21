@@ -9,11 +9,11 @@ export default function App() {
   // Both screens live in the same React tree; switching never reloads the page.
   const [screen, setScreen] = useState<Screen>('home');
   // Game state is owned here so switching screens does not unmount it
-  const game = useGame();
+  const game = useGame(screen === 'home');
 
   function navigate(next: Screen) {
-    // Temporary for Milestone 2: leaving during an active game cancels it (pause comes in M3)
-    if (next === 'about') game.abandon();
+    // Leaving during an active game pauses it before the screen switches (ADR-3)
+    if (next === 'about') game.pause();
     setScreen(next);
     window.scrollTo(0, 0);
   }

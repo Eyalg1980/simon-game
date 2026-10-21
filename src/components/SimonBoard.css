@@ -46,7 +46,7 @@
   outline-offset: -6px;
 }
 
-/* While the sequence is presented, all pads dim and only the active one glows */
+/* While the sequence is presented, all pads dim and only the active one glows; also when paused */
 .simon-board--dimmed .simon-board__pad {
   filter: brightness(0.45) saturate(0.7);
 }

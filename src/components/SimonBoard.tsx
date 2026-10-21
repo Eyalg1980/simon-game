@@ -2,7 +2,7 @@ import type { KeyboardEvent, PointerEvent } from 'react';
 import { COLORS, type ColorId } from '../game/colors.ts';
 import './SimonBoard.css';
 
-export type BoardMode = 'idle' | 'presenting' | 'input' | 'locked';
+export type BoardMode = 'idle' | 'presenting' | 'input' | 'paused' | 'locked';
 
 type Props = {
   mode: BoardMode;
@@ -12,7 +12,9 @@ type Props = {
 };
 
 export default function SimonBoard({ mode, litColor, onPadPointerDown, onPadKeyDown }: Props) {
-  const boardClass = mode === 'presenting' ? 'simon-board simon-board--dimmed' : 'simon-board';
+  // Dimmed while the sequence is presented and while the game is paused (DESIGN §1.1)
+  const dimmed = mode === 'presenting' || mode === 'paused';
+  const boardClass = dimmed ? 'simon-board simon-board--dimmed' : 'simon-board';
 
   return (
     <div className={boardClass} data-mode={mode}>

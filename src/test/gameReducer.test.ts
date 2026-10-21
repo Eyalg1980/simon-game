@@ -134,19 +134,79 @@ describe('gameReducer', () => {
     expect(gameReducer(s, { type: 'dismiss' })).toBe(s);
   });
 
-  it('abandon cancels an active game and invalidates its presentation', () => {
+  it('pause while presenting keeps the sequence and round and invalidates the presentation', () => {
     const presenting = reachRound(3);
-    const abandoned = gameReducer(presenting, { type: 'abandon' });
-    expect(abandoned.status).toBe('idle');
-    expect(abandoned.presentationId).toBe(presenting.presentationId + 1);
-
-    const awaiting = finishPresentation(presenting);
-    expect(gameReducer(awaiting, { type: 'abandon' }).status).toBe('idle');
+    const paused = gameReducer(presenting, { type: 'pause' });
+    expect(paused.status).toBe('paused');
+    expect(paused.presentationId).toBe(presenting.presentationId + 1);
+    expect(paused.sequence).toEqual(presenting.sequence);
+    expect(paused.round).toBe(3);
+    expect(paused.completedRounds).toBe(2);
+    expect(paused.gameId).toBe(presenting.gameId);
+    // The old presentation can no longer hand over to the player
+    expect(gameReducer(paused, { type: 'presentationDone', presentationId: presenting.presentationId })).toBe(
+      paused,
+    );
   });
 
-  it('abandon does not affect idle or finished games', () => {
-    expect(gameReducer(initialGameState, { type: 'abandon' })).toBe(initialGameState);
+  it('pause while awaiting input drops the partial input', () => {
+    let s = finishPresentation(reachRound(4));
+    s = gameReducer(s, { type: 'press', color: s.sequence[0], nextColor: 'red' });
+    s = gameReducer(s, { type: 'press', color: s.sequence[1], nextColor: 'red' });
+    expect(s.inputIndex).toBe(2);
+    const paused = gameReducer(s, { type: 'pause' });
+    expect(paused.status).toBe('paused');
+    expect(paused.inputIndex).toBe(0);
+    expect(paused.sequence).toEqual(s.sequence);
+    expect(paused.round).toBe(4);
+  });
+
+  it('pause right after a completed round keeps the next round and its added color', () => {
+    const next = completeRound(reachRound(2));
+    const paused = gameReducer(next, { type: 'pause' });
+    expect(paused.round).toBe(3);
+    expect(paused.sequence).toHaveLength(3);
+    expect(paused.completedRounds).toBe(2);
+  });
+
+  it('pause does not affect idle, finished or already paused games', () => {
+    expect(gameReducer(initialGameState, { type: 'pause' })).toBe(initialGameState);
     const won = completeRound(reachRound(10));
-    expect(gameReducer(won, { type: 'abandon' })).toBe(won);
+    expect(gameReducer(won, { type: 'pause' })).toBe(won);
+    const lost = gameReducer(finishPresentation(started('green')), {
+      type: 'press',
+      color: 'red',
+      nextColor: 'red',
+    });
+    expect(gameReducer(lost, { type: 'pause' })).toBe(lost);
+    const paused = gameReducer(reachRound(2), { type: 'pause' });
+    expect(gameReducer(paused, { type: 'pause' })).toBe(paused);
+  });
+
+  it('ignores presses while paused', () => {
+    const paused = gameReducer(finishPresentation(reachRound(2)), { type: 'pause' });
+    expect(gameReducer(paused, { type: 'press', color: paused.sequence[0], nextColor: 'red' })).toBe(paused);
+  });
+
+  it('resume presents the same full sequence of the same round again', () => {
+    let s = finishPresentation(reachRound(3));
+    s = gameReducer(s, { type: 'press', color: s.sequence[0], nextColor: 'red' });
+    const paused = gameReducer(s, { type: 'pause' });
+    const resumed = gameReducer(paused, { type: 'resume' });
+    expect(resumed.status).toBe('presenting');
+    expect(resumed.intro).toBe('start');
+    expect(resumed.inputIndex).toBe(0);
+    expect(resumed.presentationId).toBe(paused.presentationId + 1);
+    expect(resumed.sequence).toEqual(s.sequence);
+    expect(resumed.round).toBe(3);
+    expect(resumed.completedRounds).toBe(2);
+  });
+
+  it('resume is ignored unless the game is paused', () => {
+    const presenting = started();
+    expect(gameReducer(presenting, { type: 'resume' })).toBe(presenting);
+    expect(gameReducer(initialGameState, { type: 'resume' })).toBe(initialGameState);
+    const resumed = gameReducer(gameReducer(presenting, { type: 'pause' }), { type: 'resume' });
+    expect(gameReducer(resumed, { type: 'resume' })).toBe(resumed);
   });
 });
